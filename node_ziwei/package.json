@@ -1,0 +1,10 @@
+{
+  "name": "node_ziwei",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "紫微斗数排盘桥接：iztro",
+  "dependencies": {
+    "iztro": "^2.6.1"
+  }
+}

@@ -1,0 +1,16 @@
+# 密钥 / 环境配置
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# 运行产物
+*.log
+.DS_Store
