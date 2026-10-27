@@ -86,23 +86,38 @@ async def _overview(req: InterpretRequest, rendered: str) -> tuple[str, dict, li
     )
     mod_text: dict[str, str] = {}
     mod_metas: list[dict] = []
+    failed: set[str] = set()
     for m, r in zip(modules, results):
-        if isinstance(r, BaseException):
-            mod_text[m] = f"（{m} 模块本次分析失败：{str(r)[:100]}，可稍后重试）"
+        # 成功必为 (text, meta) 元组；异常（含 BaseException 系，如 CancelledError）
+        # 会以异常实例形式出现在 gather(return_exceptions=True) 的结果中，统一按失败处理。
+        if not isinstance(r, tuple):
+            failed.add(m)
+            mod_text[m] = f"（{templates.MODULE_LABELS.get(m, m)}模块本次分析未完成，可稍后重试）"
             mod_metas.append({})
         else:
             text, meta = r
             mod_text[m] = text
             mod_metas.append(meta)
 
-    # 2) 整合综合速览
-    summaries = "\n\n".join(
-        f"【{templates.MODULE_LABELS.get(m, m)}】\n{mod_text[m][:600]}" for m in modules
-    )
+    # 2) 整合综合速览（仅取有效结果；整合失败时降级为分模块结果）
+    ok_texts = {m: t for m, t in mod_text.items() if m not in failed and t.strip()}
+    if ok_texts:
+        summaries = "\n\n".join(
+            f"【{templates.MODULE_LABELS.get(m, m)}】\n{t[:600]}" for m, t in ok_texts.items()
+        )
+    else:
+        summaries = "（本次各模块均未取得有效分析结果，请仅基于盘面事实给出简要速览。）"
     int_user = templates.build_integration_user(rendered, summaries)
-    int_text, int_meta = await asyncio.to_thread(
-        llm.chat, system, int_user, scene="overview_integration", max_tokens=1500,
-    )
+    try:
+        int_text, int_meta = await asyncio.to_thread(
+            llm.chat, system, int_user, scene="overview_integration", max_tokens=1500,
+        )
+    except Exception:
+        int_text = "（综合速览本次生成失败，以下为各模块独立分析结果，可稍后重试。）"
+        int_meta = {
+            "model": None, "provider": None, "latency_ms": 0,
+            "prompt_tokens": 0, "completion_tokens": 0,
+        }
 
     # 3) 拼接全文：综合速览 + 分模块详解
     parts = ["## 综合速览", int_text.strip(), "## 分模块详解"]
