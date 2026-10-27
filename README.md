@@ -85,7 +85,9 @@ bazi/
 │   └── seed_prompts.py         # 提示词模板灌库脚本
 ├── node_ziwei/                 # iztro 紫微排盘 Node 脚本
 ├── frontend/                   # index.html + region-data.js（省市区数据）
+├── schema.sql                  # 建库建表脚本（MySQL 8.0）
 ├── tests/test_smoke.py         # 全链路冒烟测试
+├── tests/test_interpret_degrade.py  # 解读降级路径测试（llm.chat 打桩）
 ├── Dockerfile
 └── requirements.txt
 ```
@@ -94,31 +96,45 @@ bazi/
 
 ## 快速开始
 
-### 1. 安装依赖
+### 1. 创建虚拟环境（推荐）
+
+```bash
+# Windows (PowerShell)
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# macOS / Linux
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+> `.venv` 已被 `.gitignore` 排除，不会提交。
+
+### 2. 安装依赖
 
 ```bash
 pip install -r requirements.txt        # Python 依赖
 cd node_ziwei && npm install && cd ..  # 紫微斗数依赖（iztro），需要 Node 18+
 ```
 
-### 2. 配置环境变量
+### 3. 配置环境变量
 
 ```bash
 cp .env.example .env
 ```
 
-至少要填 `LLM_API_KEY` 才能使用解读功能；只排盘不需要。
+至少要填 `LLM_API_KEY` 才能使用解读功能；只排盘不需要。可选修改 `LLM_BASE_URL` / `LLM_MODEL` 切换模型提供商。
 
-### 3. 初始化数据库（可选）
+### 4. 初始化数据库（可选）
 
 ```bash
-mysql -u root -p -e "CREATE DATABASE mingpan DEFAULT CHARSET utf8mb4;"
-python -m app.seed_prompts      # 灌入提示词模板
+mysql -u root -p < schema.sql   # 建库 mingpan + 建 9 张业务表
+python -m app.seed_prompts      # 灌入提示词模板与模块配置（幂等）
 ```
 
 `DB_ENABLED=false` 可完全跳过数据库，此时解读功能仍可用（使用内置模板兜底）。
 
-### 4. 启动
+### 5. 启动
 
 ```bash
 uvicorn app.main:app --reload --port 8000
@@ -133,6 +149,20 @@ Docker：
 docker build -t bazi .
 docker run -p 8000:8000 --env-file .env bazi
 ```
+
+### 6. 验证
+
+```bash
+# 健康检查（应返回 status: ok）
+curl http://127.0.0.1:8000/api/v1/health
+
+# 只排盘（返回结构化三盘）
+curl -X POST http://127.0.0.1:8000/api/v1/chart \
+  -H "Content-Type: application/json" \
+  -d '{"birth":{"year":1995,"month":8,"day":18,"hour":9,"minute":30,"gender":"male","birth_place":"上海"}}'
+```
+
+浏览器打开 <http://127.0.0.1:8000> 录入出生信息即可体验排盘与解读。
 
 ---
 
@@ -217,7 +247,7 @@ flowchart LR
 pytest -v
 ```
 
-`tests/test_smoke.py` 覆盖排盘与解读的 6 项全链路冒烟用例。
+`tests/test_smoke.py` 覆盖排盘与解读的 6 项全链路冒烟用例；`tests/test_interpret_degrade.py` 另含 5 项解读降级路径用例（模块失败 / 整合失败 / CancelledError / 空结果，`llm.chat` 打桩，不依赖真实 LLM 与数据库）。
 
 ---
 
